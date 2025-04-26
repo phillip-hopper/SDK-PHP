@@ -59,6 +59,16 @@ class CurlClient
      */
     private $_lastStatusCode;
 
+    public $MockCurl = false;
+
+    /**
+     * Array key should be part of the URL to which the response belongs
+     * @var MockCurlResponse[]
+     */
+    public $UrlMockResponse = [];
+
+    private $custom_request = '';
+
     public function __construct($apiKey = "", $siteID = "", $keepBelowRateLimit = true, $debug = false)
     {
         $this->setCredentials($apiKey, $siteID);
@@ -268,6 +278,7 @@ class CurlClient
             case "put":
                 curl_setopt($curlHandle, CURLOPT_CUSTOMREQUEST, "PUT");
                 curl_setopt($curlHandle, CURLOPT_POSTFIELDS, $requestParams);
+                $this->custom_request = 'PUT';
                 break;
 
             case "delete":
@@ -281,6 +292,7 @@ class CurlClient
                 {
                     $url = $url."?".$requestParams;
                 }
+                $this->custom_request = 'DELETE';
                 break;
         }
 
@@ -307,6 +319,17 @@ class CurlClient
         curl_setopt($curlHandle, CURLOPT_CONNECTTIMEOUT, 30);
         curl_setopt($curlHandle, CURLOPT_TIMEOUT, 60 * 2);
 
+        if ($this->MockCurl)
+            $result = $this->DoMockCurl($url, $headers);
+        else
+            $result = $this->DoCurl($curlHandle, $requestParams, $headers);
+
+        unset($this->_requestHeaders["Content-Type"]);
+        return $result;
+    }
+
+    private function DoCurl($curlHandle, $requestParams, $headers)
+    {
         /** ********** DEBUGGER ********** */
         if ($this->_debug) {
 
@@ -343,14 +366,64 @@ class CurlClient
 
         $this->_lastStatusCode = curl_getinfo($curlHandle, CURLINFO_HTTP_CODE);
         if ($this->_lastStatusCode == self::HTTP_RATE_LIMIT)
-        {
             $result = $this->retry($headers[self::RATE_LIMIT_RESET], $curlHandle);
-        }
 
         curl_close($curlHandle);
 
-        unset($this->_requestHeaders["Content-Type"]);
         return $result;
+    }
+
+    private function DoMockCurl($url, $headers)
+    {
+        $custom_request = $this->custom_request;
+        $has_post_fields = array_key_exists(CURLOPT_POSTFIELDS, $params ?? []);
+
+        /** @var ICurlResponse $response */
+        $response = null;
+        $return_key = '';
+
+        // look for a mock response that matches the URL
+        foreach ($this->UrlMockResponse as $key => $value) {
+
+            // does this response match the requested URL?
+            if (!str_contains($url, $key))
+                continue;
+
+            if (!empty($custom_request) && $custom_request == $value->Method) {
+
+                // this is a PUT or DELETE (or possibly POST)
+                $response = $value->Response;
+                $return_key = $key;
+                break;
+            }
+            elseif ($has_post_fields && empty($custom_request) && $value->Method == 'POST') {
+
+                // this is a POST
+                $response = $value->Response;
+                $return_key = $key;
+                break;
+            }
+            elseif (!$has_post_fields && empty($custom_request) && $value->Method == 'GET') {
+
+                // this is a GET
+                $response = $value->Response;
+                $return_key = $key;
+                break;
+            }
+        }
+
+        self::$_responseHeaders = $headers;
+
+        if (empty($return_key))
+            return '';
+
+        $this->_lastStatusCode = $response->HttpCode;
+
+        // remove this response from the stack
+        unset($this->UrlMockResponse[$return_key]);
+
+        // return the value
+        return $response->Content;
     }
 
     /**
