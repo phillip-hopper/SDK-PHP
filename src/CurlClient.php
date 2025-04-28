@@ -268,11 +268,13 @@ class CurlClient
             case "post":
                 curl_setopt($curlHandle, CURLOPT_POST, 1);
                 curl_setopt($curlHandle, CURLOPT_POSTFIELDS, $requestParams);
+                $this->custom_request = '';
                 break;
 
             case "get":
                 curl_setopt($curlHandle, CURLOPT_HTTPGET, 1);
                 $url = $url."?".$requestParams;
+                $this->custom_request = '';
                 break;
 
             case "put":
