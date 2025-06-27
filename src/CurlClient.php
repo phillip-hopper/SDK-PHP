@@ -67,8 +67,6 @@ class CurlClient
      */
     public $UrlMockResponse = [];
 
-    private $custom_request = '';
-
     public function __construct($apiKey = "", $siteID = "", $keepBelowRateLimit = true, $debug = false)
     {
         $this->setCredentials($apiKey, $siteID);
@@ -268,19 +266,16 @@ class CurlClient
             case "post":
                 curl_setopt($curlHandle, CURLOPT_POST, 1);
                 curl_setopt($curlHandle, CURLOPT_POSTFIELDS, $requestParams);
-                $this->custom_request = '';
                 break;
 
             case "get":
                 curl_setopt($curlHandle, CURLOPT_HTTPGET, 1);
                 $url = $url."?".$requestParams;
-                $this->custom_request = '';
                 break;
 
             case "put":
                 curl_setopt($curlHandle, CURLOPT_CUSTOMREQUEST, "PUT");
                 curl_setopt($curlHandle, CURLOPT_POSTFIELDS, $requestParams);
-                $this->custom_request = 'PUT';
                 break;
 
             case "delete":
@@ -294,7 +289,6 @@ class CurlClient
                 {
                     $url = $url."?".$requestParams;
                 }
-                $this->custom_request = 'DELETE';
                 break;
         }
 
@@ -322,7 +316,7 @@ class CurlClient
         curl_setopt($curlHandle, CURLOPT_TIMEOUT, 60 * 2);
 
         if ($this->MockCurl)
-            $result = $this->DoMockCurl($url, $headers);
+            $result = $this->DoMockCurl($url, $method, $headers);
         else
             $result = $this->DoCurl($curlHandle, $requestParams, $headers);
 
@@ -375,11 +369,8 @@ class CurlClient
         return $result;
     }
 
-    private function DoMockCurl($url, $headers)
+    private function DoMockCurl($url, $method, $headers)
     {
-        $custom_request = $this->custom_request;
-        $has_post_fields = array_key_exists(CURLOPT_POSTFIELDS, $params ?? []);
-
         /** @var ICurlResponse $response */
         $response = null;
         $return_key = '';
@@ -391,23 +382,7 @@ class CurlClient
             if (!str_contains($url, $key))
                 continue;
 
-            if (!empty($custom_request) && $custom_request == $value->Method) {
-
-                // this is a PUT or DELETE (or possibly POST)
-                $response = $value->Response;
-                $return_key = $key;
-                break;
-            }
-            elseif ($has_post_fields && empty($custom_request) && $value->Method == 'POST') {
-
-                // this is a POST
-                $response = $value->Response;
-                $return_key = $key;
-                break;
-            }
-            elseif (!$has_post_fields && empty($custom_request) && $value->Method == 'GET') {
-
-                // this is a GET
+            if (strtoupper($value->Method) == strtoupper($method)) {
                 $response = $value->Response;
                 $return_key = $key;
                 break;
